@@ -1,0 +1,20 @@
+# Build output
+dist/
+.build/
+*.zip
+*.icns
+
+# macOS
+.DS_Store
+
+# Personal Claude Code files (never publish your own config)
+CLAUDE.local.md
+.claude/settings.local.json
+.claude/projects/
+catalog.md
+change-log.md
+
+# Editors
+.idea/
+.vscode/
+*.swp
