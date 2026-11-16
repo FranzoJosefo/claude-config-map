@@ -2,9 +2,9 @@
 
 A small Mac app that shows, visually, every **Claude Code** instruction and config file on your Mac and how they stack: which file affects which sessions and folders, and how many tokens each one adds to every chat.
 
-![Map view](docs/screenshots/map.png)
+![Map view, tree layout](docs/screenshots/tree.png)
 
-- **Map:** every file by level (Account → Organization → This Mac → Project → Subfolder), with lines showing what applies to what. Click a file to see what it applies to. Click a folder to see everything that affects it.
+- **Map:** every file by level (Account → Organization → This Mac → Project → Subfolder), with lines showing what applies to what. Show it as a top-down **Tree** (subfolders nested under their project) or as left-to-right **Columns**. Click a file to see what it applies to. Click a folder to see everything that affects it.
 - **What applies here?** Pick any folder to see the exact stack of files a Claude Code session there loads, in load order, with a per-chat token estimate.
 - **File details:** full path, rendered contents, what it applies to, last modified date, and an estimated token cost marked *loaded in every chat* or *loaded on demand*.
 - **Private and offline:** read-only, no network access, no dependencies. Nothing is sent anywhere.
@@ -30,7 +30,13 @@ Requires macOS 12 or later, on Apple Silicon or Intel.
 - **Show memory outside scan folders** also lists auto-memory folders Claude Code keeps for folders you haven't added.
 - **Show in Finder / Copy path** on any file.
 
+- **Tree ↓ / Columns →** switches the map layout; the app remembers your choice.
+
 ![Folder selected](docs/screenshots/folder.png)
+
+The same map as columns:
+
+![Columns layout](docs/screenshots/columns.png)
 
 ## What it scans
 

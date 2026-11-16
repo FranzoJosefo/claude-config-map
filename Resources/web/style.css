@@ -88,6 +88,23 @@ main { flex: 1; display: flex; min-height: 0; }
 .ld-on-demand { background: var(--chip); color: var(--muted); }
 .ld-not-in-context, .ld-not-loaded, .ld-account { background: transparent; color: var(--muted); border: 1px dashed var(--line); }
 
+/* Layout toggle */
+.layout-toggle { display: flex; background: var(--chip); border-radius: 7px; padding: 2px; }
+.layout-toggle button { border: 0; background: none; padding: 3px 10px; border-radius: 5px; cursor: pointer; color: var(--muted); font-size: 12px; }
+.layout-toggle button.active { background: var(--panel); color: var(--text); box-shadow: var(--shadow); font-weight: 550; }
+
+/* Tree (top-down) layout */
+.map.tree { display: flex; flex-direction: column; gap: 24px; min-width: 0; padding: 14px 20px 48px; }
+.tier { position: relative; z-index: 1; }
+.tier-head { display: flex; gap: 8px; align-items: baseline; margin-bottom: 10px; font-size: 12.5px; flex-wrap: wrap; width: fit-content; max-width: 100%; background: var(--bg); padding-right: 10px; border-radius: 4px; }
+.tier-head .dot { align-self: center; }
+.tier-cards { display: flex; justify-content: center; gap: 16px; flex-wrap: wrap; }
+.tier-cards .card { width: min(460px, 100%); }
+.tier-cards .card .chips { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+.pgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 22px 18px; align-items: start; }
+.subs { padding-left: 24px; margin-top: 14px; display: flex; flex-direction: column; gap: 12px; }
+.sub > .sub { padding-left: 24px; margin-top: 12px; }
+
 /* Detail panel */
 .detail { width: 380px; flex: none; border-left: 1px solid var(--line); background: var(--panel); overflow: auto; padding: 16px 18px 40px; }
 .detail h2 { margin: 0 0 4px; font-size: 17px; overflow-wrap: anywhere; }

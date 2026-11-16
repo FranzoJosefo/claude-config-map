@@ -40,7 +40,8 @@
 
   // ---------- state ----------
   const S = { data: null, view: 'map', sel: null, selScope: null, filter: '', stack: null, stackPath: null, raw: false,
-              optEmpty: true, optOutside: false, collapsed: new Set() };
+              optEmpty: true, optOutside: false, collapsed: new Set(), layout: 'tree' };
+  try { const l = localStorage.getItem('layout'); if (l === 'tree' || l === 'columns') S.layout = l; } catch (e) { /* storage unavailable */ }
   let scopeById = {}, filesByScope = {}, childrenOf = {}, fileById = {};
 
   function index() {
@@ -120,9 +121,21 @@
   function renderMap() {
     if (!S.data) return;
     const hl = highlightSet();
-    const cols = LEVELS.map(L => {
+    const map = $('#map');
+    map.classList.toggle('tree', S.layout === 'tree');
+    document.querySelectorAll('.layout-toggle button').forEach(b => b.classList.toggle('active', b.dataset.layout === S.layout));
+    map.innerHTML = (S.layout === 'tree' ? treeHTML(hl) : columnsHTML(hl)) + '<svg class="links"></svg>';
+    map.style.setProperty('--subcol', S.data.scopes.some(s => s.level === 'subfolder') ? 'minmax(200px, 1fr)' : 'minmax(130px, .5fr)');
+    requestAnimationFrame(drawLinks);
+  }
+
+  const projectSort = (a, b) => (!!a.outside - !!b.outside) || (!a.folder - !b.folder) || a.label.localeCompare(b.label);
+
+  // Left-to-right: one column per level.
+  function columnsHTML(hl) {
+    return LEVELS.map(L => {
       let scopes = S.data.scopes.filter(s => s.level === L.key && visible(s));
-      if (L.key === 'project') scopes.sort((a, b) => (!!a.outside - !!b.outside) || (!a.folder - !b.folder) || a.label.localeCompare(b.label));
+      if (L.key === 'project') scopes.sort(projectSort);
       if (L.key === 'subfolder') { // keep subfolders roughly in their project's order
         const order = S.data.scopes.filter(s => s.level === 'project').map(s => s.id);
         const top = s => { let x = s; while (x && x.level === 'subfolder') x = scopeById[x.parent]; return x ? order.indexOf(x.id) : 0; };
@@ -131,9 +144,25 @@
       return `<div class="col" data-level="${L.key}"><div class="col-head"><div class="t"><span class="dot" style="background:${lc(L.key)}"></span>${L.name}</div><div class="d">${L.desc}</div></div>
         ${scopes.map(s => cardHTML(s, hl)).join('') || (L.key === 'subfolder' ? '<div class="empty-note">No nested CLAUDE.md or .claude folders in subfolders.</div>' : '')}</div>`;
     }).join('');
-    $('#map').innerHTML = cols + '<svg class="links"></svg>';
-    $('#map').style.setProperty('--subcol', S.data.scopes.some(s => s.level === 'subfolder') ? 'minmax(200px, 1fr)' : 'minmax(130px, .5fr)');
-    requestAnimationFrame(drawLinks);
+  }
+
+  // Top-down: one row per level; subfolders nest under their project.
+  function treeHTML(hl) {
+    const head = (key, name, desc) => `<div class="tier-head"><span class="dot" style="background:${lc(key)}"></span><strong>${name}</strong><span class="muted">${desc}</span></div>`;
+    const tier = (key, name, desc, inner) => `<div class="tier" data-level="${key}">${head(key, name, desc)}${inner}</div>`;
+    let html = ['account', 'org', 'mac'].map(k => {
+      const L = LEVELS.find(x => x.key === k);
+      return tier(k, L.name, L.desc, `<div class="tier-cards">${S.data.scopes.filter(s => s.level === k).map(s => cardHTML(s, hl)).join('')}</div>`);
+    }).join('');
+    const folders = S.data.scopes.filter(s => s.folder && visible(s));
+    if (folders.length) html += tier('folder', 'Parent folders', 'A CLAUDE.md here applies to every project inside', `<div class="tier-cards">${folders.map(s => cardHTML(s, hl)).join('')}</div>`);
+    const subs = id => (childrenOf[id] || []).map(c => scopeById[c]).filter(s => s.level === 'subfolder')
+      .map(s => `<div class="sub">${cardHTML(s, hl)}${subs(s.id)}</div>`).join('');
+    const projects = S.data.scopes.filter(s => s.level === 'project' && !s.folder && visible(s)).sort(projectSort);
+    const grid = projects.map(p => { const k = subs(p.id); return `<div class="pgroup">${cardHTML(p, hl)}${k ? `<div class="subs">${k}</div>` : ''}</div>`; }).join('');
+    html += tier('project', 'Projects', 'Sessions started in that folder. Subfolders (loaded when Claude works there) sit under their project.',
+      `<div class="pgrid">${grid || '<div class="empty-note">No projects yet. Add a scan folder.</div>'}</div>`);
+    return html;
   }
 
   function drawLinks() {
@@ -141,19 +170,32 @@
     if (!svg) return;
     const mr = map.getBoundingClientRect();
     const hl = highlightSet();
+    const tree = S.layout === 'tree';
     const pos = {};
-    map.querySelectorAll('.card').forEach(c => { const r = c.getBoundingClientRect(); pos[c.dataset.scope] = { l: r.left - mr.left, r: r.right - mr.left, y: r.top - mr.top + 19 }; });
+    map.querySelectorAll('.card').forEach(c => {
+      const r = c.getBoundingClientRect();
+      pos[c.dataset.scope] = { l: r.left - mr.left, r: r.right - mr.left, t: r.top - mr.top, b: r.bottom - mr.top, cx: (r.left + r.right) / 2 - mr.left, y: r.top - mr.top + 19 };
+    });
     let paths = '';
     for (const s of S.data.scopes) {
       const a = pos[s.parent], b = pos[s.id];
       if (!a || !b) continue;
       const on = hl ? (hl.has(s.id) && hl.has(s.parent)) : true;
       const col = lc(s.level === 'project' && s.folder ? 'folder' : s.level);
-      let d;
-      if (Math.abs(a.l - b.l) < 5) { const x = a.l - 2; d = `M${x},${a.y} C${x - 26},${a.y} ${x - 26},${b.y} ${x},${b.y}`; }
-      else { const x1 = a.r, x2 = b.l, mx = (x1 + x2) / 2; d = `M${x1},${a.y} C${mx},${a.y} ${mx},${b.y} ${x2},${b.y}`; }
+      let d, dot;
+      if (tree && s.level === 'subfolder') { // elbow from the parent's left edge down into the nested card
+        const x = a.l + 11;
+        d = `M${x},${a.b} L${x},${b.y - 8} Q${x},${b.y} ${x + 8},${b.y} L${b.l},${b.y}`; dot = [b.l, b.y];
+      } else if (tree) {
+        const my = (a.b + b.t) / 2;
+        d = `M${a.cx},${a.b} C${a.cx},${my} ${b.cx},${my} ${b.cx},${b.t}`; dot = [b.cx, b.t];
+      } else if (Math.abs(a.l - b.l) < 5) {
+        const x = a.l - 2; d = `M${x},${a.y} C${x - 26},${a.y} ${x - 26},${b.y} ${x},${b.y}`; dot = [x, b.y];
+      } else {
+        const x1 = a.r, x2 = b.l, mx = (x1 + x2) / 2; d = `M${x1},${a.y} C${mx},${a.y} ${mx},${b.y} ${x2},${b.y}`; dot = [x2, b.y];
+      }
       paths += `<path d="${d}" fill="none" stroke="${col}" stroke-width="${hl && on ? 2.2 : 1.4}" stroke-opacity="${hl ? (on ? 0.9 : 0.12) : 0.45}"/>`;
-      if (!hl || on) paths += `<circle cx="${Math.abs(a.l - b.l) < 5 ? b.l - 2 : b.l}" cy="${b.y}" r="3" fill="${col}" fill-opacity="${hl ? 0.9 : 0.6}"/>`;
+      if (!hl || on) paths += `<circle cx="${dot[0]}" cy="${dot[1]}" r="3" fill="${col}" fill-opacity="${hl ? 0.9 : 0.6}"/>`;
     }
     svg.setAttribute('width', map.scrollWidth); svg.setAttribute('height', map.scrollHeight);
     svg.innerHTML = paths;
@@ -320,6 +362,8 @@
   document.addEventListener('click', async e => {
     const t = e.target;
     const tab = t.closest('.tabs button'); if (tab) return setView(tab.dataset.view);
+    const lay = t.closest('.layout-toggle button');
+    if (lay) { S.layout = lay.dataset.layout; try { localStorage.setItem('layout', S.layout); } catch (e) { /* ignore */ } renderMap(); return; }
     if (t.closest('#rootsBtn')) { $('#rootsPop').hidden = !$('#rootsPop').hidden; return; }
     if (t.closest('#addRoot')) { $('#rootsPop').hidden = true; if (await call('addRoot')) refresh(); return; }
     const rm = t.closest('[data-remove]'); if (rm) { await call('removeRoot', { path: rm.dataset.remove }); refresh(); return; }
@@ -360,6 +404,7 @@
   window.__refresh = refresh;
   window.__focusSearch = () => { setView('map'); $('#search').focus(); };
   window.__setup = async (o = {}) => {
+    if (o.layout) { S.layout = o.layout; renderMap(); }
     if (o.optOutside) { S.optOutside = true; $('#optOutside').checked = true; renderMap(); }
     if (o.selectFile) { const f = S.data.files.find(x => x.display === o.selectFile || x.id === o.selectFile); if (f) { S.sel = f.id; renderMap(); renderDetail(); } }
     if (o.selectScope) { const s = S.data.scopes.find(x => x.label === o.selectScope); if (s) { S.selScope = s.id; renderMap(); renderDetail(); } }
