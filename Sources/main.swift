@@ -307,12 +307,22 @@ func hasClaudeFiles(_ p: String) -> Bool {
     return isFile(join(p, "CLAUDE.md")) || isFile(join(p, "CLAUDE.local.md")) || isDir(join(p, ".claude"))
 }
 
+/// Files that mark a folder as a code project even without git.
+let PROJECT_MARKERS = ["settings.gradle", "settings.gradle.kts", "build.gradle", "build.gradle.kts", "package.json",
+                       "Package.swift", "pyproject.toml", "Cargo.toml", "go.mod", "pom.xml", "Gemfile", "pubspec.yaml"]
+
+func looksLikeProject(_ p: String) -> Bool {
+    fm.fileExists(atPath: join(p, ".git")) || hasClaudeFiles(p) || PROJECT_MARKERS.contains { isFile(join(p, $0)) }
+        || children(p).contains { $0.hasSuffix(".xcodeproj") || $0.hasSuffix(".xcworkspace") }
+}
+
+/// True when a folder holds projects (e.g. ~/Developer/AndroidStudioProjects) rather than being one.
 func containsRepo(_ p: String, depth: Int) -> Bool {
     if depth == 0 { return false }
     for c in children(p) where !c.hasPrefix(".") && !SKIP_DIRS.contains(c) {
         let q = join(p, c)
         guard isDir(q), !isSymlink(q) else { continue }
-        if fm.fileExists(atPath: join(q, ".git")) || hasClaudeFiles(q) { return true }
+        if looksLikeProject(q) { return true }
         if containsRepo(q, depth: depth - 1) { return true }
     }
     return false
@@ -465,7 +475,9 @@ final class Scanner {
         return id
     }
 
-    func walk(_ dir: String, depth: Int, root: String, parent: String, inProject: Bool) {
+    /// `group` is true for a scan folder and for grouping folders inside it: their direct
+    /// subfolders count as projects even without git or Claude files.
+    func walk(_ dir: String, depth: Int, root: String, parent: String, inProject: Bool, group: Bool = false) {
         for name in children(dir) where !skipDir(name) {
             let p = join(dir, name)
             guard isDir(p), !isSymlink(p) else { continue }
@@ -473,11 +485,13 @@ final class Scanner {
             let claude = hasClaudeFiles(p)
             var nextParent = parent
             var nowInProject = inProject
+            var nextGroup = false
             if !inProject {
-                if git || claude || (depth == 1 && !containsRepo(p, depth: 2)) {
+                let isGroup = !git && !claude && !looksLikeProject(p) && containsRepo(p, depth: 2)
+                if git || claude || looksLikeProject(p) || (group && !isGroup) {
                     nextParent = addProject(p, parent: parent, root: root)
                     nowInProject = true
-                }
+                } else if isGroup { nextGroup = true }
             } else if claude {
                 let id = "s:" + p
                 addScope(id, level: "subfolder", label: baseName(p), path: p, parent: parent,
@@ -485,7 +499,7 @@ final class Scanner {
                 folderFiles(p, scope: id, level: "subfolder", onDemand: true)
                 nextParent = id
             }
-            if depth < MAX_DEPTH { walk(p, depth: depth + 1, root: root, parent: nextParent, inProject: nowInProject) }
+            if depth < MAX_DEPTH { walk(p, depth: depth + 1, root: root, parent: nextParent, inProject: nowInProject, group: nextGroup) }
         }
     }
 
@@ -510,7 +524,7 @@ final class Scanner {
                 let id = addProject(r, parent: parent, root: r)
                 walk(r, depth: 1, root: r, parent: id, inProject: true)
             } else {
-                walk(r, depth: 1, root: r, parent: parent, inProject: false)
+                walk(r, depth: 1, root: r, parent: parent, inProject: false, group: true)
             }
         }
     }
